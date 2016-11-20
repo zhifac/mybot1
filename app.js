@@ -102,13 +102,31 @@ bot.dialog('/askAssets', new builder.IntentDialog({ recognizers: [recognizer] })
                 session.userData.dealQuery.dealAsset = money.entity;
                 var message = '';
                 session.send('好的，您提供的信息如下：');
+                var company = '';
+                var dealObj = '';
                 if (session.userData.dealQuery.company && session.userData.dealQuery.dealObj) {
                     message = message + '公司名称：' + session.userData.dealQuery.company + '；\n';
                     message = message + '交易对手：' + session.userData.dealQuery.dealObj + '；\n';
+                    company = session.userData.dealQuery.company;
+                    dealObj = session.userData.dealQuery.dealObj;
                 }
                 message = message + '是否关联：' + (session.userData.dealQuery.isConnectedPerson == 'true' ? '是' : '否') + '；\n';
                 message = message + '交易所：' + session.userData.dealQuery.exchange + '；\n';
-                message = message + '公司去年总收入：' + session.userData.dealQuery.companyAsset ;
+                message = message + '公司去年总收入：' + session.userData.dealQuery.companyAsset + '；\n';
+                message = message + '交易资产：' + session.userData.dealQuery.dealAsset ;
+                var card = new builder.HeroCard()
+                    .title('查询结果')
+                    .subtitle(message)
+                    .images([new builder.CardImage().url('')])
+                    .buttons([
+                        new builder.CardAction()
+                            .title('More details')
+                            .type('openUrl')
+                            .value('https://www.bing.com/search?q=' + encodeURIComponent(company + ' ' + dealObj + ' ' + session.userData.dealQuery.exchange))
+                    ]);
+                message = new builder.Message()
+                        .attachmentLayout(builder.AttachmentLayout.carousel)
+                        .attachments([card]);
                 session.send(message);
                 session.send('经过小绿的判断，根据' + session.userData.dealQuery.exchange + '交易所相关法律规定，您的此次交易需要进行披露，我们已经为您推荐相似的上市公司公告，小绿十分欢迎您的使用，期待再次为您服务，谢谢。');
                 session.endConversation();
