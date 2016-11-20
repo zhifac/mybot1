@@ -53,12 +53,16 @@ var intents = new builder.IntentDialog({ recognizers: [recognizer] })
                 var isIndep = results.response;
                 if (isIndep.entity == '是') {
                     session.userData.dealQuery.isConnectedPerson = 'true';
-                    session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
-                    session.beginDialog('/askAssets');
+                    session.send('好的，下面请您提供您公司上一财年的总收入以及所在交易所。');
+                    session.beginDialog('/askExchange');
+                    // session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                    // session.beginDialog('/askAssets');
                 } else if (isIndep.entity == '不是') {
                     session.userData.dealQuery.isConnectedPerson = 'false';
-                    session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
-                    session.beginDialog('/askAssets');
+                    session.send('好的，下面请您提供您公司上一财年的总收入以及所在交易所。');
+                    session.beginDialog('/askExchange');
+                    // session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                    // session.beginDialog('/askAssets');
                 } else {
                     session.userData.dealQuery.isConnectedPerson = 'unknown';
                     session.send('好的，您是否能够提供您公司的名称以及您交易对手的名称？');
@@ -78,6 +82,9 @@ var intents = new builder.IntentDialog({ recognizers: [recognizer] })
         session.userData.dealQuery = {
             dealObj: null,
             company: null,
+            dealAsset: null,
+            companyAsset: null,
+            exchange: null,
             isConnectedPerson: 'unknown'
         };
         next();
@@ -92,9 +99,18 @@ bot.dialog('/askAssets', new builder.IntentDialog({ recognizers: [recognizer] })
         function(session, args, next) {
             var money = builder.EntityRecognizer.findEntity(args.entities, 'builtin.money');
             if (money) {
-                session.userData.dealAsset = money.entity;
-                session.send('好的，资产为' + money.entity + '，请您稍候');
-                session.send('经过小绿的判断，根据香港联交所相关法律规定，您的此次交易需要进行披露，我们已经为您推荐相似的上市公司公告，小绿十分欢迎您的使用，期待再次为您服务，谢谢。');
+                session.userData.dealQuery.dealAsset = money.entity;
+                var message = '';
+                session.send('好的，您提供的信息如下：');
+                if (session.userData.dealQuery.company && session.userData.dealQuery.dealObj) {
+                    message = message + '公司名称：' + session.userData.dealQuery.company + '\n';
+                    message = message + '交易对手：' + session.userData.dealQuery.dealObj + '\n';
+                }
+                message = message + '是否关联：' + (session.userData.dealQuery.isConnectedPerson == 'true' ? '是' : '否') + '\n';
+                message = message + '交易所：' + session.userData.dealQuery.exchange + '\n';
+                message = message + '公司去年总收入：' + session.userData.dealQuery.companyAsset ;
+                session.send(message);
+                session.send('经过小绿的判断，根据' + session.userData.dealQuery.exchange + '交易所相关法律规定，您的此次交易需要进行披露，我们已经为您推荐相似的上市公司公告，小绿十分欢迎您的使用，期待再次为您服务，谢谢。');
                 session.endConversation();
             } else {
                 session.send('请提供交易资产金额');
@@ -111,6 +127,7 @@ bot.dialog('/askAssets', new builder.IntentDialog({ recognizers: [recognizer] })
         session.replaceDialog('/askAssets');
     })
 );
+
 
 bot.dialog('/getDealObj', new builder.IntentDialog({ recognizers: [recognizer] })
     .matches('交易对象', [
@@ -148,10 +165,8 @@ bot.dialog('/getDealObj', new builder.IntentDialog({ recognizers: [recognizer] }
             }
             //var isIndep = results.response;
             if (session.userData.dealQuery.dealObj && session.userData.dealQuery.company) {
-                //TODO
-                var marketValue = '';
-                var revenue = '';
-                var profit = '';
+                session.userData.dealQuery.companyAsset = '1000亿美元';
+                session.userData.dealQuery.exchange = '香港';
                 var message = '根据您提供的公司名称我们查询到贵公司为香港联交所上市公司，上一年度的总收入为1000亿美元，请您确认以上信息。';
                 builder.Prompts.choice(session, message, ['确认', '不对']);
             } else {
@@ -176,4 +191,71 @@ bot.dialog('/getDealObj', new builder.IntentDialog({ recognizers: [recognizer] }
     })
 );
 
+bot.dialog('/askExchange', new builder.IntentDialog({ recognizers: [recognizer] })
+    .matches('交易所', [
+        function (session, args, next) {
+            var exchange = builder.EntityRecognizer.findEntity(args.entities, 'exchange');
+            var money = builder.EntityRecognizer.findEntity(args.entities, 'builtin.money');
+            if (money && exchange) {
+                session.userData.dealQuery.exchange = exchange.entity;
+                var companyAsset = session.userData.dealQuery.companyAsset = money.entity.replace('入', '').replace('是', '');
+                var message = '小绿听懂了，上一财年贵公司的总收入为' + companyAsset + '，所在交易所为' + exchange.entity + '交易所。请您确认。';
+                builder.Prompts.choice(session, message, ['确认', '不对']);
+                //builder.Prompts.text(session, message);
+                //next({response: {entity: '确认'}});
+            } else {
+                if (money) {
+                    var companyAsset = session.userData.dealQuery.companyAsset = money.entity.replace('入', '').replace('是', '');
+                }
+                if (exchange) {
+                    session.userData.dealQuery.exchange = exchange.entity;
+                }
+                next();
+            }
+        },
+        function(session, results, next) {
+            if (results && results.response && results.response.entity == '确认') {
+                session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                session.beginDialog('/askAssets');
+            } else {
+                if (!session.userData.dealQuery.companyAsset) {
+                    builder.Prompts.text(session, '请提供贵公司去年总收入');
+                } else {
+                    next();
+                }
+            }
+        },
+        function(session, results, next) {
+            if (results.response) {
+                session.userData.dealQuery.companyAsset = results.response;
+            }
+            if (!session.userData.dealQuery.exchange) {
+                builder.Prompts.text(session, '请提供交易所名称');
+            } else {
+                next();
+            }
+        },
+        function (session, results, next) {
+            if (results.response) {
+                session.userData.dealQuery.exchange = results.response;
+            }
+            if (session.userData.dealQuery.exchange && session.userData.dealQuery.companyAsset) {
+                session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                session.beginDialog('/askAssets');
+                // session.endDialog();
+            } else {
+                session.send('公司去年收入及交易所名称未知，请重新提供');
+                session.replaceDialog('/askExchange');
+            }
+        }
+    ])
+    .cancelAction('cancelOperation', "已取消操作", {
+        matches: /^(取消)/i,
+        confirmPrompt: "确定？"
+    })
+    .onDefault((session) => {
+        session.send('对不起，我不能理解，请重新输入或输入"取消"');
+        session.replaceDialog('/askExchange');
+    })
+);
 
