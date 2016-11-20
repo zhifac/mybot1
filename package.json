@@ -3,7 +3,7 @@
   "version": "0.6.0",
   "description": "Examples for the Bot Builder framework.",
   "author": "Microsoft Corp.",
-  "main": "lawbot.js",
+  "main": "app.js",
   "license": "MIT",
   "dependencies": {
     "botbuilder": "^3.5.0-rc4",
