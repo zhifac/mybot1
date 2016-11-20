@@ -9,28 +9,27 @@ For a complete walkthrough of creating this bot see the article below.
 
 -----------------------------------------------------------------------------*/
 
-//var builder = require('../core');
 var builder = require('botbuilder')
 var restify = require('restify')
 
 // Create bot and bind to console
-var connector = new builder.ConsoleConnector().listen();
-var bot = new builder.UniversalBot(connector);
-
-// var server = restify.createServer();
-// server.listen(process.env.port || process.env.PORT || 3978, function () {
-//    console.log('%s listening to %s', server.name, server.url); 
-// });
-// var connector = new builder.ChatConnector({
-//     appId: '6540a2ac-14d6-4c04-b9f9-db50060b8272',
-//     appPassword: 'ohpS5yUcm6ghhqdswEbcbGV'
-// });
+// var connector = new builder.ConsoleConnector().listen();
 // var bot = new builder.UniversalBot(connector);
-// server.post('/api/messages', connector.listen());
+
+var server = restify.createServer();
+server.listen(process.env.port || process.env.PORT || 3978, function () {
+   console.log('%s listening to %s', server.name, server.url); 
+});
+var connector = new builder.ChatConnector({
+    appId: process.env.MICROSOFT_APP_ID,
+    appPassword: process.env.MICROSOFT_APP_PASSWORD
+});
+var bot = new builder.UniversalBot(connector);
+server.post('/api/messages', connector.listen());
 
 
 // Add global LUIS recognizer to bot
-var model = process.env.model || 'https://api.projectoxford.ai/luis/v2.0/apps/e483e361-a85b-44a9-8fc5-d53e596302a0?subscription-key=917877d63a4645e696ccdc9d99bb4984&q=';
+var model = process.env.model || 'https://api.projectoxford.ai/luis/v2.0/apps/4ba1412e-aee4-4659-a23a-0c8eb2a23a62?subscription-key=917877d63a4645e696ccdc9d99bb4984&q=';
 
 
 var recognizer = new builder.LuisRecognizer(model);
@@ -40,74 +39,32 @@ var intents = new builder.IntentDialog({ recognizers: [recognizer] })
             var intent = args.intent;
             var dealObj = builder.EntityRecognizer.findEntity(intent.entities, 'dealObject');
             dealObj = dealObj ? dealObj.entity : null;
-            session.dialogData.dealQuery = {
+            session.userData.dealQuery = {
                 dealObj: dealObj,
+                company: null,
                 isConnectedPerson: 'unknown'
             }
             if (!dealObj) {
-                session.send('好的，您能否首先介绍一下此项交易的交易对象的情况？');
-            }
-        }
-    ])
-    .matches('交易对象', [
-        function (session, args, next) {
-            var intent = args.intent;
-            var dealObj = builder.EntityRecognizer.findEntity(intent.entities, 'dealObject');
-            var company = builder.EntityRecognizer.findEntity(intent.entities, 'company');
-            if (!dealObj || !company) {
-                builder.prompts.choice(session, '好的，能否具体一点，比如该公司与您公司是否为关联人(connected person)？', ['是','否']);
-            } else {
-                session.dialogData.dealQuery.dealObj = dealObj;
-                session.dialogData.dealQuery.company = company;
-                session.send('我知道了，请您稍后。');
-                var message = '根据我们的数据库查询，您的交易对手为' + dealObj + '公司，它并不会与贵公司构成关联人关系。请您确认。';
-                builder.prompts.choice(session, message, ['确认', '不对']);
+                builder.Prompts.choice(session, '好的，贵公司与交易对象是否构成关联人（connected person）关系？', ['是', '不是', '不清楚']);
             }
         },
         function (session, results) {
-            if (!session.dialogData.dealQuery.dealObj) {
+            if (!session.userData.dealQuery.dealObj) {
                 var isIndep = results.response;
                 if (isIndep.entity == '是') {
-                    session.dialogData.dealQuery.isConnectedPerson = 'true';
-                } else if (isIndep.entity == '否') {
-                    session.dialogData.dealQuery.isConnectedPerson = 'false';
-                } else {
-                    session.dialogData.dealQuery.isConnectedPerson = 'unknown';
-                    session.send('好的，您是否能够提供您公司的名称以及您交易对手的名称？');
-                }
-            } else {
-                var isIndep = results.response;
-                if (isIndep.entity == '确认') {
-                    //TODO
-                    var marketValue = '';
-                    var revenue = '';
-                    var profit = '';
-                    session.send('根据您提供的公司名称我们查询到贵公司为香港联交所上市公司，上一年度的总市值为xxx，总收入为xxx，净利润为xxx，请您确认以上信息。')
+                    session.userData.dealQuery.isConnectedPerson = 'true';
+                    session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                    session.beginDialog('/askAssets');
+                } else if (isIndep.entity == '不是') {
+                    session.userData.dealQuery.isConnectedPerson = 'false';
+                    session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
                     session.beginDialog('/askAssets');
                 } else {
-                    //TODO
+                    session.userData.dealQuery.isConnectedPerson = 'unknown';
+                    session.send('好的，您是否能够提供您公司的名称以及您交易对手的名称？');
+                    session.beginDialog('/getDealObj');
                 }
             }
-        }
-    ])
-    .matches('金额', [
-        function(session, args, next) {
-            var intent = args.intent;
-            var money = builder.EntityRecognizer.findEntity(intent.entities, 'builtin.money');
-            if (money && session.dialogData.dealAsset == 'toBeQuery') {
-                session.dialogData.dealQuery.money = money;
-                builder.Prompts.choice(session, '我知道了，下面请问您此次交易是否还有其他有可能构成关联人的买家？', ['有', '没有'])
-            }
-        },
-        function(session, results) {
-            if (results.response.entity == '没有') {
-                session.send('好的，请您稍后。');
-                //TODO search for result
-                session.send('经过小绿的判断，根据香港联交所相关法律规定，您的此次交易需要进行披露，我们已经为您推荐相似的上市公司公告，小绿十分欢迎您的使用，期待再次为您服务，谢谢。');
-            } else {
-                //TODO
-            }
-            session.endDialog();
         }
     ])
     .onDefault((session) => {
@@ -118,18 +75,105 @@ var intents = new builder.IntentDialog({ recognizers: [recognizer] })
             session.userData.started = true;
         }
     }).onBegin((session, args, next) => {
+        session.userData.dealQuery = {
+            dealObj: null,
+            company: null,
+            isConnectedPerson: 'unknown'
+        };
         next();
+    }).cancelAction('cancelOperation', "已取消操作", {
+        matches: /^(取消)/i,
+        confirmPrompt: "确定？"
     });
 bot.dialog('/', intents);
 
-bot.dialog('/askAssets', [
-    function(session, args, next) {
-        session.send('好的，下面请问您本次交易涉及的资产规模是多少？')
-        session.dialogData.dealAsset = 'toBeQuery';
-        session.endDialog();
-    }
-]);
+bot.dialog('/askAssets', new builder.IntentDialog({ recognizers: [recognizer] })
+    .matches('资产', [
+        function(session, args, next) {
+            var money = builder.EntityRecognizer.findEntity(args.entities, 'builtin.money');
+            if (money) {
+                session.userData.dealAsset = money.entity;
+                session.send('好的，资产为' + money.entity + '，请您稍候');
+                session.send('经过小绿的判断，根据香港联交所相关法律规定，您的此次交易需要进行披露，我们已经为您推荐相似的上市公司公告，小绿十分欢迎您的使用，期待再次为您服务，谢谢。');
+                session.endConversation();
+            } else {
+                session.send('请提供交易资产金额');
+                session.replaceDialog('/askAssets');
+            }
+        }
+    ])
+    .cancelAction('cancelOperation', "已取消操作", {
+        matches: /^(取消)/i,
+        confirmPrompt: "确定？"
+    })
+    .onDefault((session) => {
+        session.send('对不起，我不能理解，请重新输入或输入"取消"');
+        session.replaceDialog('/askAssets');
+    })
+);
 
-
+bot.dialog('/getDealObj', new builder.IntentDialog({ recognizers: [recognizer] })
+    .matches('交易对象', [
+        function (session, args, next) {
+            var intent = args.intent;
+            var dealObj = builder.EntityRecognizer.findEntity(args.entities, 'dealObject');
+            var company = builder.EntityRecognizer.findEntity(args.entities, 'company');
+            if (dealObj && company) {
+                session.userData.dealQuery.dealObj = dealObj.entity;
+                session.userData.dealQuery.company = company.entity;
+                session.send('我知道了，请您稍后。');
+                var message = '根据我们的数据库查询，您的交易对手为' + dealObj.entity + '公司，它并不会与贵公司(' + company.entity + ')构成关联人关系';
+                //builder.Prompts.choice(session, message, ['确认', '不对']);
+                builder.Prompts.text(session, message);
+                next({response: {entity: '确认'}});
+            } else {
+                if (!session.userData.dealQuery.company && !company) {
+                    builder.Prompts.text(session, '请提供贵公司名称');
+                }
+            }
+        },
+        function(session, results, next) {
+            if (results.response) {
+                session.userData.dealQuery.company = results.response;
+            }
+            if (!session.userData.dealQuery.dealObj) {
+                builder.Prompts.text(session, '请提供交易对象名称');
+            } else {
+                next();
+            }
+        },
+        function (session, results, next) {
+            if (results.response) {
+                session.userData.dealQuery.dealObj = results.response;
+            }
+            //var isIndep = results.response;
+            if (session.userData.dealQuery.dealObj && session.userData.dealQuery.company) {
+                //TODO
+                var marketValue = '';
+                var revenue = '';
+                var profit = '';
+                var message = '根据您提供的公司名称我们查询到贵公司为香港联交所上市公司，上一年度的总收入为1000亿美元，请您确认以上信息。';
+                builder.Prompts.choice(session, message, ['确认', '不对']);
+            } else {
+                session.endConversation('对不起，我们不能为您继续服务');
+            }
+        },
+        function(session, results) {
+            var confirm = results.response;
+            if (confirm.entity == '确认') {
+                session.send('好的，下面请问您本次交易涉及的资产规模是多少？');
+                session.beginDialog('/askAssets');
+            }
+        }
+    ])
+    .cancelAction('cancelOperation', "已取消操作", {
+        matches: /^(取消)/i,
+        confirmPrompt: "确定？"
+    })
+    .onDefault((session) => {
+        session.send('对不起，我不能理解，请重新输入或输入"取消"');
+        session.replaceDialog('/getDealObj');
+    })
+);
 
 
